@@ -1,0 +1,27 @@
+{
+  "name": "rebound-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "build": "tsc --noEmit",
+    "seed": "tsx src/sim/seed.ts",
+    "test": "tsx src/test/invariants.test.ts",
+    "demo": "tsx src/sim/demo.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "fastify": "^5.2.0",
+    "ioredis": "^5.4.1",
+    "pg": "^8.13.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

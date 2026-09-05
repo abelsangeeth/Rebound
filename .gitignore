@@ -1,0 +1,25 @@
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets. The generated demo webhook secret lives here too -- regenerate
+# rather than share it.
+.env
+.env.local
+
+# Trained artefacts: rebuild with `npm run seed` then `python -m app.train`.
+decision/models/*.txt
+decision/models/*.npy
+decision/models/*.json
+
+# Demo-recording material -- not part of the product.
+docs/demo-script.md
+docs/rebound-demo.srt
+
+# Design-tool scratch space.
+docs/stitch-prompt.md
+dashboard/public/stitch/
+dashboard/tsconfig.tsbuildinfo
+*.tsbuildinfo
