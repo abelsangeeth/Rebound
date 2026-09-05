@@ -56,7 +56,10 @@ export default function Chaos({ onDone }: { onDone: () => void }) {
       setResult(r);
       setLabel(a.title);
     } catch (e) {
-      setResult({ ok: false, error: (e as Error).message });
+      // A request that never got a response means the connection is broken,
+      // not that a guarantee is. Rendering it as a red FAILED verdict would
+      // claim the ledger lost a test it was never asked to take.
+      setResult({ unreachable: true, error: (e as Error).message });
       setLabel(a.title);
     } finally {
       setBusy(null);
@@ -64,7 +67,10 @@ export default function Chaos({ onDone }: { onDone: () => void }) {
     }
   }
 
-  const held = result?.all_ok !== false && result?.ok !== false;
+  const unreachable = result?.unreachable === true;
+  const held = !unreachable && result?.all_ok !== false && result?.ok !== false;
+  const tone = unreachable ? 'warn' : held ? 'pass' : 'fail';
+  const colour = unreachable ? 'var(--warn)' : held ? 'var(--ok)' : 'var(--crit)';
 
   return (
     <div className="panel">
@@ -91,20 +97,23 @@ export default function Chaos({ onDone }: { onDone: () => void }) {
         </div>
 
         {result && (
-          <div className={`verdict ${held ? 'pass' : 'fail'}`}>
+          <div className={`verdict ${tone}`}>
             <h4>
-              <span
-                className="icon s18"
-                style={{ color: held ? 'var(--ok)' : 'var(--crit)' }}
-                aria-hidden="true"
-              >
-                {held ? 'verified' : 'gpp_bad'}
+              <span className="icon s18" style={{ color: colour }} aria-hidden="true">
+                {unreachable ? 'cloud_off' : held ? 'verified' : 'gpp_bad'}
               </span>
-              {label} — {held ? 'held' : 'FAILED'}
+              {label} — {unreachable ? 'not run' : held ? 'held' : 'FAILED'}
             </h4>
+            {unreachable && (
+              <p>
+                The browser could not reach the API, so nothing was tested and this is
+                not a verdict. Check that both the dashboard dev server and the API on
+                port 3000 are still running, then reload the page.
+              </p>
+            )}
             {result.what && <p>{result.what}</p>}
             {result.verdict && (
-              <p style={{ color: held ? 'var(--ok)' : 'var(--crit)', fontWeight: 500 }}>
+              <p style={{ color: colour, fontWeight: 500 }}>
                 {result.verdict}
               </p>
             )}

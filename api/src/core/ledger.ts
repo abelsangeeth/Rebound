@@ -20,7 +20,13 @@ export interface Leg {
 
 export class UnbalancedEntry extends Error {}
 
-async function post(
+/**
+ * Write one balanced entry group.
+ *
+ * Exported so the chaos console can aim a deliberately unbalanced group at
+ * the real posting path. A stand-in would prove nothing about this one.
+ */
+export async function postGroup(
   c: PoolClient,
   orderId: string,
   legs: Leg[],
@@ -67,7 +73,7 @@ export async function postCapture(
     { account: 'merchant_payable', direction: 'credit', amount_paise: amountPaise },
   ];
   try {
-    return await post(c, orderId, legs, 'attempt', attemptId, 'capture');
+    return await postGroup(c, orderId, legs, 'attempt', attemptId, 'capture');
   } catch (e) {
     if (isUniqueViolation(e)) return null; // already settled; idempotent replay
     throw e;
@@ -81,7 +87,7 @@ export async function postRefund(
   refundId: string,
   amountPaise: number,
 ) {
-  return post(
+  return postGroup(
     c,
     orderId,
     [

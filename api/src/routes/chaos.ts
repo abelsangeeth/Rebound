@@ -3,7 +3,7 @@ import { createHmac, randomInt, randomUUID } from 'node:crypto';
 import { q, one, tx } from '../core/db.js';
 import { env } from '../core/env.js';
 import { createOrder, runAttempt, openAttempt, reconcile } from '../core/recovery.js';
-import { postCapture, UnbalancedEntry } from '../core/ledger.js';
+import { postCapture, postGroup, UnbalancedEntry } from '../core/ledger.js';
 import { newSimState, mulberry32 } from '../sim/gateway.js';
 import { clock } from '../sim/clock.js';
 
@@ -261,46 +261,89 @@ export default async function registerChaos(app: FastifyInstance) {
    * ledger must refuse rather than store a lie that the invariant view would
    * later report.
    */
+  /**
+   * Try to put a lie in the ledger.
+   *
+   * Note what this does NOT do: hand postCapture a wrong amount. That function
+   * derives all three legs from the amount you give it, so the group balances
+   * at whatever size you ask for -- the balance check never fires and the test
+   * passes while attempting nothing. The legs themselves have to disagree.
+   */
   app.post('/unbalanced-ledger', async () => {
     const target = await one<any>(`SELECT id, amount_paise FROM orders ORDER BY created_at DESC LIMIT 1`);
     if (!target) return { ok: false, reason: 'no orders yet -- start the simulator' };
 
-    let rejected = false;
-    let message = '';
+    const amount = Number(target.amount_paise);
+    // Each attack gets its own group id, so the verdict can be read back out
+    // of the table rather than inferred from which catch block ran.
+    const groupA = randomUUID();
+    const groupB = randomUUID();
+
+    // 1. A group that is short by 1000 paise, through the real posting path.
+    let balanceCheckRejected = false;
+    let rejection = '';
     try {
       await tx(async (c) => {
-        // 1000 paise credited that nothing debits.
-        await postCapture(c, target.id, randomUUID(), Number(target.amount_paise) + 1000, 0);
-        throw new Error('rolled back regardless');
+        await postGroup(
+          c,
+          target.id,
+          [
+            { account: 'gateway_clearing', direction: 'debit', amount_paise: amount },
+            { account: 'merchant_payable', direction: 'credit', amount_paise: amount + 1000 },
+          ],
+          'chaos',
+          groupA,
+          'deliberately unbalanced',
+        );
       });
     } catch (e) {
-      rejected = e instanceof UnbalancedEntry;
-      message = (e as Error).message;
+      balanceCheckRejected = e instanceof UnbalancedEntry;
+      rejection = (e as Error).message;
     }
 
-    // The above is caught by the balance check; prove the direct path too.
-    let directRejected = false;
+    // 2. A single-legged INSERT that skips postGroup entirely -- the check it
+    //    would have failed is not in the transaction's way at all.
+    let directThrew = false;
     try {
       await tx(async (c) => {
         await c.query(
-          `INSERT INTO ledger_entries (entry_group, order_id, account, direction, amount_paise, ref_type)
-           VALUES ($1,$2,'merchant_payable','credit',$3,'chaos')`,
-          [randomUUID(), target.id, 5000],
+          `INSERT INTO ledger_entries (entry_group, order_id, account, direction, amount_paise, ref_type, ref_id)
+           VALUES ($1,$2,'merchant_payable','credit',$3,'chaos',$4)`,
+          [groupB, target.id, 5000, groupB],
         );
         throw new UnbalancedEntry('single-legged entry rolled back');
       });
     } catch {
-      directRejected = true;
+      directThrew = true;
     }
 
-    await log('unbalanced_ledger', { order: target.id, rejected, directRejected });
+    // The verdict, read back from the table. Neither group may have left a row
+    // behind. Catching an exception only proves something was thrown.
+    const landed = await one<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM ledger_entries WHERE entry_group IN ($1::uuid, $2::uuid)`,
+      [groupA, groupB],
+    );
+    const rowsLeftBehind = Number(landed?.n ?? 0);
+    const inv = await invariantState();
+    const clean = balanceCheckRejected && directThrew && rowsLeftBehind === 0 && inv.all_ok;
+
+    await log('unbalanced_ledger', {
+      order: target.id,
+      balanceCheckRejected,
+      directThrew,
+      rowsLeftBehind,
+    });
     return {
-      ok: true,
-      what: 'attempted to post a double-entry group whose legs do not sum to zero',
-      balance_check_rejected: rejected || message.includes('balance'),
-      single_leg_rolled_back: directRejected,
-      verdict: 'the ledger refused the write; no partial group was committed',
-      ...(await invariantState()),
+      ok: clean,
+      what: 'posted a group whose legs disagree by 1000 paise, then a single-legged insert that bypasses the check',
+      balance_check_rejected: balanceCheckRejected,
+      rejection,
+      single_leg_rolled_back: directThrew,
+      rows_left_behind: rowsLeftBehind,
+      verdict: clean
+        ? 'both writes refused; the table holds no row from either group'
+        : `LEDGER DAMAGED: ${rowsLeftBehind} row(s) committed`,
+      ...inv,
     };
   });
 

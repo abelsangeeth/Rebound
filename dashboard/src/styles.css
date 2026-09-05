@@ -243,6 +243,8 @@ td.num { text-align: right; font-family: var(--f-mono); font-variant-numeric: ta
 }
 .verdict.pass { border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: var(--ok-soft); }
 .verdict.fail { border-color: var(--crit); background: var(--crit-soft); }
+/* A dropped connection is neither a pass nor a failed guarantee. */
+.verdict.warn { border-color: var(--warn); background: var(--warn-soft); }
 .verdict h4 { margin: 0 0 6px; font-family: var(--f-display); font-size: 13.5px; }
 .verdict p { margin: 0 0 9px; font-size: 13px; color: var(--ink-2); }
 .verdict pre {
@@ -439,6 +441,7 @@ td.num { text-align: right; font-family: var(--f-mono); font-variant-numeric: ta
 .verdict { border-left-width: 3px; }
 .verdict.pass { border-left-color: var(--ok); }
 .verdict.fail { border-left-color: var(--crit); }
+.verdict.warn { border-left-color: var(--warn); }
 .verdict h4 { display: flex; align-items: center; gap: 7px; }
 
 /* --- footer ------------------------------------------------------------- */
