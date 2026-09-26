@@ -47,6 +47,43 @@ function Wait-Port {
     return $false
 }
 
+# Docker Desktop is simply not running after a reboot, and its engine lags the
+# app by a minute even once it is. Starting it here beats failing with
+# "is Docker running?" in a window that closes before anyone can read it.
+function Test-Docker {
+    try {
+        $null = docker info --format '{{.ServerVersion}}' 2>$null
+    } catch {
+        return $false
+    }
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Start-DockerEngine {
+    param([int]$Seconds = 150)
+    if (Test-Docker) { return $true }
+
+    $exe = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
+    if (-not (Test-Path $exe)) {
+        Write-Host "  the Docker engine is down and Docker Desktop is not at" -ForegroundColor Yellow
+        Write-Host "    $exe" -ForegroundColor Yellow
+        Write-Host "  Start it yourself, wait for the whale to stop animating, then rerun." -ForegroundColor Yellow
+        return $false
+    }
+
+    Write-Host "  the Docker engine is down - starting Docker Desktop"
+    Start-Process $exe | Out-Null
+
+    Write-Host -NoNewline "  waiting for the Docker engine "
+    for ($i = 0; $i -lt $Seconds; $i++) {
+        if (Test-Docker) { Write-Host " up"; return $true }
+        Start-Sleep -Seconds 1
+        if ($i % 3 -eq 0) { Write-Host -NoNewline '.' }
+    }
+    Write-Host " TIMED OUT"
+    return $false
+}
+
 # Each service gets its own window, kept open on exit so a crash is readable
 # rather than vanishing with the terminal.
 function Start-Service {
@@ -80,6 +117,14 @@ if (-not (Test-Path $venvPython)) {
 }
 
 # --- infrastructure --------------------------------------------------------
+if (-not (Start-DockerEngine)) {
+    Write-Host ""
+    Write-Host "  Postgres and Redis cannot start without the Docker engine." -ForegroundColor Red
+    Write-Host "  If Docker Desktop is open but wedged, this machine usually needs:" -ForegroundColor Red
+    Write-Host "    wsl --shutdown        then restart Docker Desktop" -ForegroundColor Red
+    exit 1
+}
+
 Write-Host "  docker compose up"
 Push-Location (Join-Path $root 'infra')
 # Do NOT pipe this through 2>&1. Windows PowerShell 5.1 wraps a native
