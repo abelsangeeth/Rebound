@@ -8,13 +8,14 @@ import { num, pct } from '../lib/api';
  * simulator knows the answer. Two rows carry most of the argument:
  *
  *   salary_cycle  — recoverable, and it must wait for payday
- *   impulse_lost  — NOT recoverable, and it wears a soft-looking decline
+ *   impulse_lost  — NOT recoverable, and half of it declines soft
  *
- * Both can surface as `authentication_failed`. A rules engine keyed on the
- * error string treats them identically and burns retries on the second one
- * forever. Separating them needs amount, hour and history — which is precisely
- * what the model is for. If the two rows below look different, the model is
- * doing real work.
+ * `salary_cycle` declines `insufficient_funds` and half of `impulse_lost`
+ * declines `authentication_failed`. Different strings, but the same decline
+ * CLASS — soft — and the class is all a rules engine keys on, so it retries
+ * both. Nothing here separates them; that half is the wasted-retry floor.
+ * What the salary row demonstrates is timing: recoverable, but only if you
+ * wait long enough, which is the part the model actually earns.
  */
 const NOTES: Record<string, string> = {
   salary_cycle: 'waiting for payday works — but only if you wait long enough',

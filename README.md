@@ -59,11 +59,18 @@ with different recovery behaviour:
 The cohort is **never visible** to the policy. It has to be inferred from the
 decline signal, amount, hour and attempt history.
 
-Two of those cohorts are deliberately confusable. `impulse_lost` emits
-`authentication_failed` — the same string a genuinely recoverable payment
-emits. A rules engine keyed on the error string treats them identically and
-burns retries on the dead one forever. Separating them requires amount, hour
-and history, which is precisely what the model is for.
+`impulse_lost` is the cohort that resists every policy here. It declines
+`payment_cancelled` half the time — classified **hard**, so the guardrail
+refuses it outright and it costs nothing — and `authentication_failed` the
+other half, which is genuinely **soft**: the same decline class as
+`salary_cycle`'s `insufficient_funds` or `issuer_outage`'s `gateway_error`.
+
+A rules engine keys on that class, so at its resolution those are the same
+thing and it retries all of them. **So does Rebound.** That surviving half is
+the 322-retry wasted floor every arm shares in the counterfactual below, and
+closing it is open work rather than something this system solved — the
+model's win is timing and rail choice, not better separation of the dead
+cohort.
 
 Because ground truth is planted, the dashboard can show a number no production
 system can compute:
@@ -139,9 +146,11 @@ consumes an attempt slot, and no retry may run until reconciliation resolves
 it — so 15% is the honest ceiling-relative number, not a rounding of zero.
 
 The two unrecoverable cohorts sit at exactly 0%, which is the point: **nearly
-all remaining waste is `impulse_lost`**, the cohort deliberately built to wear
-a soft-looking decline. Hard declines are refused outright — the
-`no_retry_on_hard_decline` invariant reports 0 violations across every run.
+all remaining waste is the soft-declining half of `impulse_lost`** — the half
+that emits `authentication_failed` and so is indistinguishable, by decline
+class, from a genuinely recoverable failure. Everything that declares itself
+hard is refused outright: the `no_retry_on_hard_decline` invariant reports 0
+violations across every run.
 
 ---
 

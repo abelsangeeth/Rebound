@@ -11,9 +11,13 @@ import { clock, HOUR, MINUTE } from './clock.js';
 //
 // Six cohorts, each with different recovery physics. Crucially the cohort is
 // NOT observable at decision time. The model has to infer it from the decline
-// signal, amount, hour and attempt history. Two cohorts are deliberately
-// confusable from the error reason alone, which is exactly what makes this a
-// learning problem rather than a lookup table.
+// signal, amount, hour and attempt history.
+//
+// `impulse_lost` is the one that does not yield to a guardrail: half of it
+// declines soft, and at decline-class resolution -- which is all a rules
+// engine has -- that is indistinguishable from a genuinely recoverable
+// failure. No policy here separates it, which is why every arm in the
+// counterfactual carries the same wasted-retry floor.
 // ---------------------------------------------------------------------------
 
 export type Cohort =
@@ -175,10 +179,12 @@ export function firstFailure(cohort: Cohort, rnd: () => number): AttemptOutcome 
         truth: 'not_captured',
       };
     case 'impulse_lost':
-      // Deliberately wears a soft-looking mask. `authentication_failed` also
-      // appears on genuinely recoverable payments, so a rules engine keyed on
-      // the reason string will burn retries here forever. Separating the two
-      // needs amount, hour and history -- i.e. it needs the model.
+      // Half of this cohort declines `payment_cancelled`, which the taxonomy
+      // classifies HARD -- the guardrail refuses it and it costs nothing. The
+      // other half declines `authentication_failed`, which is genuinely SOFT:
+      // the same class as salary_cycle's `insufficient_funds`. Nothing in the
+      // decline class tells them apart, so every policy retries that half.
+      // It is the wasted-retry floor the counterfactual arms all share.
       return rnd() < 0.5
         ? mk('authentication_failed', 'customer', 'payment_authentication')
         : mk('payment_cancelled', 'customer', 'payment_authentication');
